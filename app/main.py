@@ -219,9 +219,7 @@ async def create_sms_expense(text: str = Query(..., min_length=1), api_key: str 
 
     try:
         request = ParseExpenseRequest(text=text)
-        expense = await parse_expense_with_openrouter(request.text)
-        if expense.id != user["id"]:
-            raise HTTPException(status_code=403, detail="SMS user id does not match API key owner.")
+        expense = await parse_expense_with_openrouter(request.text, user_id=user["id"])
         db_record = insert_expense(expense, request.text)
     except HTTPException:
         raise

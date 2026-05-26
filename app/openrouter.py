@@ -19,48 +19,33 @@ EXPENSE_JSON_SCHEMA = {
     "strict": True,
     "schema": {
         "type": "object",
-        "oneOf": [
-            {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "id": {"type": "integer", "minimum": 1},
-                    "amount": {"type": "number", "exclusiveMinimum": 0},
-                    "currency": {
-                        "anyOf": [
-                            {"type": "string", "enum": ["COP", "USD", "EUR", "MXN", "ARS", "CLP", "PEN", "BRL"]},
-                            {"type": "null"},
-                        ]
-                    },
-                    "date": {"type": "string", "format": "date"},
-                    "category": {
-                        "type": "string",
-                        "enum": [
-                            "expense",
-                            "food",
-                            "vehicle",
-                            "housing",
-                            "transport",
-                            "entertainment",
-                            "subscriptions",
-                            "groceries",
-                            "health",
-                        ],
-                    },
-                    "description": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                },
-                "required": ["id", "amount", "currency", "date", "category", "description"],
+        "additionalProperties": False,
+        "properties": {
+            "amount": {"type": "number", "exclusiveMinimum": 0},
+            "currency": {
+                "anyOf": [
+                    {"type": "string", "enum": ["COP", "USD", "EUR", "MXN", "ARS", "CLP", "PEN", "BRL"]},
+                    {"type": "null"},
+                ]
             },
-            {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "error": {"type": "string", "enum": ["missing_user_id"]},
-                    "description": {"type": "string"},
-                },
-                "required": ["error", "description"],
+            "date": {"type": "string", "format": "date"},
+            "category": {
+                "type": "string",
+                "enum": [
+                    "expense",
+                    "food",
+                    "vehicle",
+                    "housing",
+                    "transport",
+                    "entertainment",
+                    "subscriptions",
+                    "groceries",
+                    "health",
+                ],
             },
-        ],
+            "description": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+        "required": ["amount", "currency", "date", "category", "description"],
     },
 }
 
@@ -69,9 +54,6 @@ SYSTEM_PROMPT = """
 You extract expense data from user text.
 
 Return only valid JSON matching the schema.
-- id is the user id explicitly present in the text.
-- If no user id is present, return an error object with:
-  {"error":"missing_user_id","description":"..."}
 - amount is the expense amount as a number.
 - date is ISO format YYYY-MM-DD. If the text omits a date, use today's date provided below.
 - currency must be an ISO currency code when clear from the text: COP, USD, EUR, MXN, ARS, CLP, PEN, BRL.
@@ -82,7 +64,7 @@ Return only valid JSON matching the schema.
 """.strip()
 
 
-async def parse_expense_with_openrouter(text: str) -> ParsedExpense:
+async def parse_expense_with_openrouter(text: str, user_id: int) -> ParsedExpense:
     if not settings.openrouter_api_key:
         raise OpenRouterError("OPENROUTER_API_KEY is not configured.")
 
@@ -134,10 +116,8 @@ async def parse_expense_with_openrouter(text: str) -> ParsedExpense:
     except json.JSONDecodeError as exc:
         raise OpenRouterError("OpenRouter did not return valid JSON.") from exc
 
-    if isinstance(parsed_json, dict) and "error" in parsed_json:
-        raise OpenRouterError(parsed_json.get("description", "OpenRouter returned an error."))
-
     try:
+        parsed_json["id"] = user_id
         return ParsedExpense.model_validate(parsed_json)
     except ValueError as exc:
         raise OpenRouterError(f"OpenRouter JSON failed validation: {exc}") from exc
