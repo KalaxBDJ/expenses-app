@@ -34,8 +34,13 @@ export const api = {
   login: (payload: { email: string; password: string }) =>
     request<AuthSession>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request<AuthSession>("/auth/me"),
+  userConfig: (userId: number) => request<UserConfig>(`/users/${userId}/config`),
   updateConfig: (userId: number, payload: Partial<Pick<UserConfig, "default_currency" | "locale">>) =>
     request<UserConfig>(`/users/${userId}/config`, { method: "PATCH", body: JSON.stringify(payload) }),
+  rotateSmsApiKey: (userId: number) =>
+    request<{ api_key: string; config: UserConfig }>(`/users/${userId}/sms-api-key`, { method: "POST" }),
+  deleteSmsApiKey: (userId: number) =>
+    request<UserConfig>(`/users/${userId}/sms-api-key`, { method: "DELETE" }),
   dashboard: (userId: number, month: string) =>
     request<DashboardSummary>(`/dashboard/monthly?user_id=${userId}&month=${month}`),
   categories: () => request<Category[]>("/categories"),

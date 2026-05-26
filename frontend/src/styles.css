@@ -691,6 +691,67 @@ label span,
   margin-top: 12px;
 }
 
+.api-key-field,
+.generated-key-box {
+  margin-top: 12px;
+}
+
+.api-key-field input,
+.generated-key-box input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.generated-key-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(34, 224, 196, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(34, 224, 196, 0.12), rgba(167, 139, 250, 0.08));
+}
+
+.generated-key-box p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.api-key-table {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.api-key-table div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(246, 243, 255, 0.04);
+}
+
+.api-key-table span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.api-key-table strong {
+  overflow-wrap: anywhere;
+}
+
+.api-key-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.danger-action {
+  color: var(--danger);
+}
+
 .state-block {
   display: grid;
   justify-items: start;
@@ -916,6 +977,11 @@ label span,
 
   .movement-date {
     width: 42px;
+  }
+
+  .api-key-table,
+  .api-key-actions {
+    grid-template-columns: 1fr;
   }
 
   .bottom-nav {

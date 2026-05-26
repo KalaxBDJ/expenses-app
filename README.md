@@ -25,11 +25,13 @@ The API will be available at `http://127.0.0.1:8000/api`.
 
 ### SMS Expense Automation
 
+Generate an SMS API key from the app settings. Only the last 5 characters are shown after creation, and generating a new key replaces the active one. The API key must be sent in the URL:
+
 ```bash
-curl "http://127.0.0.1:8000/api/sms-expenses/create?text=user%2012%20spent%2018.50%20on%20lunch%20today"
+curl "http://127.0.0.1:8000/api/sms-expenses/create?api_key=YOUR_SMS_API_KEY&text=user%2012%20spent%2018.50%20on%20lunch%20today"
 ```
 
-Successful responses include the parsed expense and the inserted SQLite record. If the AI cannot detect a user id, or returns invalid data, the API returns an error JSON and does not insert a row.
+Successful responses include the parsed expense and the inserted SQLite record. If the API key is missing or invalid, the API returns `401`. If the AI detects a different user id than the API key owner, the API returns `403` and does not insert a row.
 
 ### Manual Expenses
 

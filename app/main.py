@@ -13,8 +13,12 @@ from app.database import (
     create_savings_goal,
     create_session,
     create_user,
+    delete_user_sms_api_key,
     delete_expense,
     get_dashboard_summary,
+    get_expense,
+    get_savings_goal,
+    get_user_by_sms_api_key,
     get_user_by_token,
     get_user_config,
     init_db,
@@ -24,6 +28,7 @@ from app.database import (
     list_expenses,
     list_incomes,
     list_savings_goals,
+    rotate_user_sms_api_key,
     update_user_config,
     update_expense,
     upsert_budget,
@@ -46,6 +51,7 @@ from app.schemas import (
     SavingsGoalContribution,
     SavingsGoalCreate,
     SavingsGoalRecord,
+    SmsApiKeyResponse,
     UserConfigRecord,
     UserConfigUpdate,
     UserCreate,
@@ -93,6 +99,15 @@ def _require_user(credentials: HTTPAuthorizationCredentials | None) -> dict:
     return user
 
 
+def _authenticated_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)) -> dict:
+    return _require_user(credentials)
+
+
+def _require_matching_user(user_id: int, user: dict) -> None:
+    if user["id"] != user_id:
+        raise HTTPException(status_code=403, detail="You can only access your own data.")
+
+
 @api_router.post("/auth/register", response_model=AuthResponse)
 def register(user: UserCreate):
     try:
@@ -119,22 +134,38 @@ def me(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
 
 
 @api_router.get("/users/{user_id}/config", response_model=UserConfigRecord)
-def read_user_config(user_id: int):
+def read_user_config(user_id: int, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
     return get_user_config(user_id)
 
 
 @api_router.patch("/users/{user_id}/config", response_model=UserConfigRecord)
-def patch_user_config(user_id: int, config: UserConfigUpdate):
+def patch_user_config(user_id: int, config: UserConfigUpdate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
     return update_user_config(user_id, config)
 
 
+@api_router.post("/users/{user_id}/sms-api-key", response_model=SmsApiKeyResponse)
+def rotate_sms_api_key(user_id: int, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
+    api_key = rotate_user_sms_api_key(user_id)
+    return {"api_key": api_key, "config": get_user_config(user_id)}
+
+
+@api_router.delete("/users/{user_id}/sms-api-key", response_model=UserConfigRecord)
+def delete_sms_api_key(user_id: int, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
+    return delete_user_sms_api_key(user_id)
+
+
 @api_router.get("/categories", response_model=list[CategoryRecord])
-def get_categories():
+def get_categories(user: dict = Depends(_authenticated_user)):
     return list_categories()
 
 
 @api_router.post("/expenses", response_model=ExpenseRecord)
-def create_manual_expense(expense: ExpenseCreate):
+def create_manual_expense(expense: ExpenseCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(expense.user_id, user)
     return create_expense(expense, source="manual")
 
 
@@ -144,12 +175,18 @@ def get_expenses(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     return list_expenses(user_id=user_id, month=month, limit=limit, offset=offset)
 
 
 @api_router.patch("/expenses/{expense_id}", response_model=ExpenseRecord)
-def patch_expense(expense_id: int, expense: ExpenseUpdate):
+def patch_expense(expense_id: int, expense: ExpenseUpdate, user: dict = Depends(_authenticated_user)):
+    existing = get_expense(expense_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Expense not found.")
+    _require_matching_user(existing["user_id"], user)
     updated = update_expense(expense_id, expense.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Expense not found.")
@@ -157,7 +194,11 @@ def patch_expense(expense_id: int, expense: ExpenseUpdate):
 
 
 @api_router.delete("/expenses/{expense_id}")
-def remove_expense(expense_id: int):
+def remove_expense(expense_id: int, user: dict = Depends(_authenticated_user)):
+    existing = get_expense(expense_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Expense not found.")
+    _require_matching_user(existing["user_id"], user)
     deleted = delete_expense(expense_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Expense not found.")
@@ -169,11 +210,21 @@ def remove_expense(expense_id: int):
     response_model=ExpenseResponse,
     responses={400: {"model": ApiError}, 502: {"model": ApiError}},
 )
-async def create_sms_expense(text: str = Query(..., min_length=1)):
+async def create_sms_expense(text: str = Query(..., min_length=1), api_key: str | None = Query(default=None)):
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key.")
+    user = get_user_by_sms_api_key(api_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key.")
+
     try:
         request = ParseExpenseRequest(text=text)
         expense = await parse_expense_with_openrouter(request.text)
+        if expense.id != user["id"]:
+            raise HTTPException(status_code=403, detail="SMS user id does not match API key owner.")
         db_record = insert_expense(expense, request.text)
+    except HTTPException:
+        raise
     except OpenRouterError as exc:
         return JSONResponse(
             status_code=400,
@@ -189,7 +240,8 @@ async def create_sms_expense(text: str = Query(..., min_length=1)):
 
 
 @api_router.post("/incomes", response_model=IncomeRecord)
-def add_income(income: IncomeCreate):
+def add_income(income: IncomeCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(income.user_id, user)
     return create_income(income)
 
 
@@ -197,12 +249,15 @@ def add_income(income: IncomeCreate):
 def get_incomes(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     return list_incomes(user_id=user_id, month=month)
 
 
 @api_router.post("/budgets", response_model=BudgetRecord)
-def save_budget(budget: BudgetCreate):
+def save_budget(budget: BudgetCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(budget.user_id, user)
     return upsert_budget(budget)
 
 
@@ -210,22 +265,30 @@ def save_budget(budget: BudgetCreate):
 def get_budgets(
     user_id: int = Query(..., ge=1),
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     return list_budgets(user_id=user_id, month=month)
 
 
 @api_router.post("/savings-goals", response_model=SavingsGoalRecord)
-def add_savings_goal(goal: SavingsGoalCreate):
+def add_savings_goal(goal: SavingsGoalCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(goal.user_id, user)
     return create_savings_goal(goal)
 
 
 @api_router.get("/savings-goals", response_model=list[SavingsGoalRecord])
-def get_savings_goals(user_id: int = Query(..., ge=1)):
+def get_savings_goals(user_id: int = Query(..., ge=1), user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
     return list_savings_goals(user_id=user_id)
 
 
 @api_router.post("/savings-goals/{goal_id}/contributions", response_model=SavingsGoalRecord)
-def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContribution):
+def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContribution, user: dict = Depends(_authenticated_user)):
+    existing = get_savings_goal(goal_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Savings goal not found.")
+    _require_matching_user(existing["user_id"], user)
     updated = add_savings_goal_contribution(goal_id, contribution.amount)
     if not updated:
         raise HTTPException(status_code=404, detail="Savings goal not found.")
@@ -236,7 +299,9 @@ def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContributi
 def monthly_dashboard(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     selected_month = month or date.today().strftime("%Y-%m")
     return get_dashboard_summary(user_id=user_id, month=selected_month)
 
