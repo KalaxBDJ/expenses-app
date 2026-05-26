@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,8 +13,12 @@ from app.database import (
     create_savings_goal,
     create_session,
     create_user,
+    delete_user_sms_api_key,
     delete_expense,
     get_dashboard_summary,
+    get_expense,
+    get_savings_goal,
+    get_user_by_sms_api_key,
     get_user_by_token,
     get_user_config,
     init_db,
@@ -24,6 +28,7 @@ from app.database import (
     list_expenses,
     list_incomes,
     list_savings_goals,
+    rotate_user_sms_api_key,
     update_user_config,
     update_expense,
     upsert_budget,
@@ -46,6 +51,7 @@ from app.schemas import (
     SavingsGoalContribution,
     SavingsGoalCreate,
     SavingsGoalRecord,
+    SmsApiKeyResponse,
     UserConfigRecord,
     UserConfigUpdate,
     UserCreate,
@@ -54,12 +60,14 @@ from app.schemas import (
 
 
 app = FastAPI(title="Expense Tracker API")
+api_router = APIRouter(prefix="/api")
 security = HTTPBearer(auto_error=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://rolling-cite-souls-dictionary.trycloudflare.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -77,6 +85,11 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@api_router.get("/health")
+def api_health() -> dict:
+    return {"status": "ok"}
+
+
 def _require_user(credentials: HTTPAuthorizationCredentials | None) -> dict:
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -86,7 +99,16 @@ def _require_user(credentials: HTTPAuthorizationCredentials | None) -> dict:
     return user
 
 
-@app.post("/auth/register", response_model=AuthResponse)
+def _authenticated_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)) -> dict:
+    return _require_user(credentials)
+
+
+def _require_matching_user(user_id: int, user: dict) -> None:
+    if user["id"] != user_id:
+        raise HTTPException(status_code=403, detail="You can only access your own data.")
+
+
+@api_router.post("/auth/register", response_model=AuthResponse)
 def register(user: UserCreate):
     try:
         created = create_user(user)
@@ -96,7 +118,7 @@ def register(user: UserCreate):
     return {"token": token, "user": created, "config": get_user_config(created["id"])}
 
 
-@app.post("/auth/login", response_model=AuthResponse)
+@api_router.post("/auth/login", response_model=AuthResponse)
 def login(credentials: UserLogin):
     session = authenticate_user(credentials)
     if not session:
@@ -104,69 +126,103 @@ def login(credentials: UserLogin):
     return session
 
 
-@app.get("/auth/me", response_model=AuthResponse)
+@api_router.get("/auth/me", response_model=AuthResponse)
 def me(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     user = _require_user(credentials)
     token = credentials.credentials if credentials else ""
     return {"token": token, "user": user, "config": get_user_config(user["id"])}
 
 
-@app.get("/users/{user_id}/config", response_model=UserConfigRecord)
-def read_user_config(user_id: int):
+@api_router.get("/users/{user_id}/config", response_model=UserConfigRecord)
+def read_user_config(user_id: int, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
     return get_user_config(user_id)
 
 
-@app.patch("/users/{user_id}/config", response_model=UserConfigRecord)
-def patch_user_config(user_id: int, config: UserConfigUpdate):
+@api_router.patch("/users/{user_id}/config", response_model=UserConfigRecord)
+def patch_user_config(user_id: int, config: UserConfigUpdate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
     return update_user_config(user_id, config)
 
 
-@app.get("/categories", response_model=list[CategoryRecord])
-def get_categories():
+@api_router.post("/users/{user_id}/sms-api-key", response_model=SmsApiKeyResponse)
+def rotate_sms_api_key(user_id: int, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
+    api_key = rotate_user_sms_api_key(user_id)
+    return {"api_key": api_key, "config": get_user_config(user_id)}
+
+
+@api_router.delete("/users/{user_id}/sms-api-key", response_model=UserConfigRecord)
+def delete_sms_api_key(user_id: int, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
+    return delete_user_sms_api_key(user_id)
+
+
+@api_router.get("/categories", response_model=list[CategoryRecord])
+def get_categories(user: dict = Depends(_authenticated_user)):
     return list_categories()
 
 
-@app.post("/expenses", response_model=ExpenseRecord)
-def create_manual_expense(expense: ExpenseCreate):
+@api_router.post("/expenses", response_model=ExpenseRecord)
+def create_manual_expense(expense: ExpenseCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(expense.user_id, user)
     return create_expense(expense, source="manual")
 
 
-@app.get("/expenses", response_model=list[ExpenseRecord])
+@api_router.get("/expenses", response_model=list[ExpenseRecord])
 def get_expenses(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     return list_expenses(user_id=user_id, month=month, limit=limit, offset=offset)
 
 
-@app.patch("/expenses/{expense_id}", response_model=ExpenseRecord)
-def patch_expense(expense_id: int, expense: ExpenseUpdate):
+@api_router.patch("/expenses/{expense_id}", response_model=ExpenseRecord)
+def patch_expense(expense_id: int, expense: ExpenseUpdate, user: dict = Depends(_authenticated_user)):
+    existing = get_expense(expense_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Expense not found.")
+    _require_matching_user(existing["user_id"], user)
     updated = update_expense(expense_id, expense.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Expense not found.")
     return updated
 
 
-@app.delete("/expenses/{expense_id}")
-def remove_expense(expense_id: int):
+@api_router.delete("/expenses/{expense_id}")
+def remove_expense(expense_id: int, user: dict = Depends(_authenticated_user)):
+    existing = get_expense(expense_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Expense not found.")
+    _require_matching_user(existing["user_id"], user)
     deleted = delete_expense(expense_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Expense not found.")
     return {"deleted": True}
 
 
-@app.get(
+@api_router.get(
     "/sms-expenses/create",
     response_model=ExpenseResponse,
     responses={400: {"model": ApiError}, 502: {"model": ApiError}},
 )
-async def create_sms_expense(text: str = Query(..., min_length=1)):
+async def create_sms_expense(text: str = Query(..., min_length=1), api_key: str | None = Query(default=None)):
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key.")
+    user = get_user_by_sms_api_key(api_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key.")
+
     try:
         request = ParseExpenseRequest(text=text)
-        expense = await parse_expense_with_openrouter(request.text)
+        expense = await parse_expense_with_openrouter(request.text, user_id=user["id"])
         db_record = insert_expense(expense, request.text)
+    except HTTPException:
+        raise
     except OpenRouterError as exc:
         return JSONResponse(
             status_code=400,
@@ -181,54 +237,71 @@ async def create_sms_expense(text: str = Query(..., min_length=1)):
     return {"expense": expense, "db_record": db_record}
 
 
-@app.post("/incomes", response_model=IncomeRecord)
-def add_income(income: IncomeCreate):
+@api_router.post("/incomes", response_model=IncomeRecord)
+def add_income(income: IncomeCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(income.user_id, user)
     return create_income(income)
 
 
-@app.get("/incomes", response_model=list[IncomeRecord])
+@api_router.get("/incomes", response_model=list[IncomeRecord])
 def get_incomes(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     return list_incomes(user_id=user_id, month=month)
 
 
-@app.post("/budgets", response_model=BudgetRecord)
-def save_budget(budget: BudgetCreate):
+@api_router.post("/budgets", response_model=BudgetRecord)
+def save_budget(budget: BudgetCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(budget.user_id, user)
     return upsert_budget(budget)
 
 
-@app.get("/budgets", response_model=list[BudgetRecord])
+@api_router.get("/budgets", response_model=list[BudgetRecord])
 def get_budgets(
     user_id: int = Query(..., ge=1),
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     return list_budgets(user_id=user_id, month=month)
 
 
-@app.post("/savings-goals", response_model=SavingsGoalRecord)
-def add_savings_goal(goal: SavingsGoalCreate):
+@api_router.post("/savings-goals", response_model=SavingsGoalRecord)
+def add_savings_goal(goal: SavingsGoalCreate, user: dict = Depends(_authenticated_user)):
+    _require_matching_user(goal.user_id, user)
     return create_savings_goal(goal)
 
 
-@app.get("/savings-goals", response_model=list[SavingsGoalRecord])
-def get_savings_goals(user_id: int = Query(..., ge=1)):
+@api_router.get("/savings-goals", response_model=list[SavingsGoalRecord])
+def get_savings_goals(user_id: int = Query(..., ge=1), user: dict = Depends(_authenticated_user)):
+    _require_matching_user(user_id, user)
     return list_savings_goals(user_id=user_id)
 
 
-@app.post("/savings-goals/{goal_id}/contributions", response_model=SavingsGoalRecord)
-def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContribution):
+@api_router.post("/savings-goals/{goal_id}/contributions", response_model=SavingsGoalRecord)
+def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContribution, user: dict = Depends(_authenticated_user)):
+    existing = get_savings_goal(goal_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Savings goal not found.")
+    _require_matching_user(existing["user_id"], user)
     updated = add_savings_goal_contribution(goal_id, contribution.amount)
     if not updated:
         raise HTTPException(status_code=404, detail="Savings goal not found.")
     return updated
 
 
-@app.get("/dashboard/monthly", response_model=DashboardSummary)
+@api_router.get("/dashboard/monthly", response_model=DashboardSummary)
 def monthly_dashboard(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(_authenticated_user),
 ):
+    _require_matching_user(user_id, user)
     selected_month = month or date.today().strftime("%Y-%m")
     return get_dashboard_summary(user_id=user_id, month=selected_month)
+
+
+app.include_router(api_router)

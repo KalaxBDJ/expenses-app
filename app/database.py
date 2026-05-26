@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Iterator
 
-from app.auth import create_session_token, hash_password, verify_password
+from app.auth import create_api_key, create_session_token, hash_api_key, hash_password, verify_api_key, verify_password
 from app.config import settings
 from app.schemas import (
     BudgetCreate,
@@ -142,6 +142,8 @@ def init_db() -> None:
                 user_id INTEGER NOT NULL UNIQUE,
                 default_currency TEXT NOT NULL DEFAULT 'COP',
                 locale TEXT NOT NULL DEFAULT 'es-CO',
+                sms_api_key_hash TEXT,
+                sms_api_key_suffix TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(user_id) REFERENCES users(id)
@@ -220,6 +222,8 @@ def init_db() -> None:
         _add_column_if_missing(connection, "incomes", "currency", "TEXT NOT NULL DEFAULT 'COP'")
         _add_column_if_missing(connection, "budgets", "currency", "TEXT NOT NULL DEFAULT 'COP'")
         _add_column_if_missing(connection, "savings_goals", "currency", "TEXT NOT NULL DEFAULT 'COP'")
+        _add_column_if_missing(connection, "user_config", "sms_api_key_hash", "TEXT")
+        _add_column_if_missing(connection, "user_config", "sms_api_key_suffix", "TEXT")
 
 
 def _user_from_row(row: sqlite3.Row) -> dict:
@@ -317,7 +321,10 @@ def get_user_config(user_id: int) -> dict:
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, user_id, default_currency, locale, created_at, updated_at
+            SELECT id, user_id, default_currency, locale,
+                   sms_api_key_suffix,
+                   sms_api_key_hash IS NOT NULL AS has_sms_api_key,
+                   created_at, updated_at
             FROM user_config
             WHERE user_id = ?
             """,
@@ -333,7 +340,10 @@ def get_user_config(user_id: int) -> dict:
             )
             row = connection.execute(
                 """
-                SELECT id, user_id, default_currency, locale, created_at, updated_at
+                SELECT id, user_id, default_currency, locale,
+                       sms_api_key_suffix,
+                       sms_api_key_hash IS NOT NULL AS has_sms_api_key,
+                       created_at, updated_at
                 FROM user_config
                 WHERE user_id = ?
                 """,
@@ -364,6 +374,50 @@ def update_user_config(user_id: int, updates: UserConfigUpdate) -> dict:
             params,
         )
     return get_user_config(user_id)
+
+
+def rotate_user_sms_api_key(user_id: int) -> str:
+    api_key = create_api_key()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE user_config
+            SET sms_api_key_hash = ?, sms_api_key_suffix = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            """,
+            (hash_api_key(api_key), api_key[-5:], user_id),
+        )
+    return api_key
+
+
+def delete_user_sms_api_key(user_id: int) -> dict:
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE user_config
+            SET sms_api_key_hash = NULL, sms_api_key_suffix = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+    return get_user_config(user_id)
+
+
+def get_user_by_sms_api_key(api_key: str) -> dict | None:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT u.id, u.name, u.email, u.created_at, c.sms_api_key_hash
+            FROM user_config c
+            JOIN users u ON u.id = c.user_id
+            WHERE c.sms_api_key_hash IS NOT NULL
+            """
+        ).fetchall()
+
+    for row in rows:
+        if verify_api_key(api_key, row["sms_api_key_hash"]):
+            return _user_from_row(row)
+    return None
 
 
 def _expense_from_row(row: sqlite3.Row) -> dict:

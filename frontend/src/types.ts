@@ -14,6 +14,8 @@ export type UserConfig = {
   user_id: number;
   default_currency: Currency;
   locale: string;
+  has_sms_api_key: boolean;
+  sms_api_key_suffix?: string | null;
   created_at: string;
   updated_at: string;
 };

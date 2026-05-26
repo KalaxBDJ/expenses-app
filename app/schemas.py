@@ -209,6 +209,8 @@ class UserConfigRecord(BaseModel):
     user_id: int
     default_currency: str = Currency.COP.value
     locale: str = "es-CO"
+    has_sms_api_key: bool = False
+    sms_api_key_suffix: str | None = None
     created_at: str
     updated_at: str
 
@@ -221,4 +223,9 @@ class UserConfigUpdate(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: UserRecord
+    config: UserConfigRecord
+
+
+class SmsApiKeyResponse(BaseModel):
+    api_key: str
     config: UserConfigRecord

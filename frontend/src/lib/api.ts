@@ -1,14 +1,17 @@
 import type { AuthSession, Budget, Category, Currency, DashboardSummary, Expense, Income, SavingsGoal, UserConfig } from "../types";
 
 let authToken = "";
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+const legacyBackendUrl = import.meta.env.VITE_BACKEND_URL
+  ? `${String(import.meta.env.VITE_BACKEND_URL).replace(/\/$/, "")}/api`
+  : undefined;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? legacyBackendUrl ?? "/api").replace(/\/$/, "");
 
 export function setAuthToken(token: string) {
   authToken = token;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${BACKEND_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -31,8 +34,13 @@ export const api = {
   login: (payload: { email: string; password: string }) =>
     request<AuthSession>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request<AuthSession>("/auth/me"),
+  userConfig: (userId: number) => request<UserConfig>(`/users/${userId}/config`),
   updateConfig: (userId: number, payload: Partial<Pick<UserConfig, "default_currency" | "locale">>) =>
     request<UserConfig>(`/users/${userId}/config`, { method: "PATCH", body: JSON.stringify(payload) }),
+  rotateSmsApiKey: (userId: number) =>
+    request<{ api_key: string; config: UserConfig }>(`/users/${userId}/sms-api-key`, { method: "POST" }),
+  deleteSmsApiKey: (userId: number) =>
+    request<UserConfig>(`/users/${userId}/sms-api-key`, { method: "DELETE" }),
   dashboard: (userId: number, month: string) =>
     request<DashboardSummary>(`/dashboard/monthly?user_id=${userId}&month=${month}`),
   categories: () => request<Category[]>("/categories"),
