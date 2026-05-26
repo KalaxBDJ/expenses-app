@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     openrouter_site_url: str | None = None
     openrouter_app_name: str = "expense-tracker"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "app/.env"),
+        env_file_encoding="utf-8",
+    )
 
 
 settings = Settings()

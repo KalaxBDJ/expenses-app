@@ -7,11 +7,11 @@ Small FastAPI backend for parsing expense text with OpenRouter and storing valid
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
+pip install -r app/requirements.txt
+cp app/.env.example app/.env
 ```
 
-Add your OpenRouter API key in `.env`.
+Add your OpenRouter API key in `app/.env`.
 
 ## Run
 
