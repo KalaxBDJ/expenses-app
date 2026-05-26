@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, CircleDollarSign, Home, List, Plus, Settings as SettingsIcon, Target } from "lucide-react";
+import { BarChart3, ChevronDown, CircleDollarSign, Home, List, Plus, Settings as SettingsIcon, Target } from "lucide-react";
 import { api, setAuthToken } from "./lib/api";
 import { currentMonth } from "./lib/format";
 import type { AuthSession, Budget, Category, DashboardSummary, Expense, Income, SavingsGoal, View } from "./types";
@@ -40,6 +40,7 @@ const nav = [
 export function App() {
   const [view, setView] = useState<View>("home");
   const [showSettings, setShowSettings] = useState(false);
+  const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(() => {
     const raw = localStorage.getItem("claridad_session");
     if (!raw) return null;
@@ -139,12 +140,22 @@ export function App() {
           <p className="eyebrow">Tu mes en claro</p>
           <h1><CircleDollarSign size={28} /> Claridad</h1>
         </div>
-        <div className="top-actions">
+        <button
+          className={`top-menu-button ${topMenuOpen ? "is-open" : ""}`}
+          onClick={() => setTopMenuOpen((value) => !value)}
+          aria-expanded={topMenuOpen}
+          aria-label="Abrir filtros del mes"
+        >
+          <SettingsIcon size={18} />
+          <span>Opciones</span>
+          <ChevronDown size={17} />
+        </button>
+        <div className={`top-actions ${topMenuOpen ? "is-open" : ""}`}>
           <label className="month-picker">
             <span>Mes</span>
             <input value={month} onChange={(event) => setMonth(event.target.value)} type="month" />
           </label>
-          <button className={`settings-button ${showSettings ? "is-active" : ""}`} onClick={() => setShowSettings((value) => !value)} aria-label="Configuración">
+          <button className={`settings-button ${showSettings ? "is-active" : ""}`} onClick={() => { setShowSettings((value) => !value); setTopMenuOpen(false); }} aria-label="Configuración">
             <SettingsIcon size={21} />
           </button>
         </div>
@@ -159,7 +170,7 @@ export function App() {
             <button
               key={item.id}
               className={`nav-item ${view === item.id ? "is-active" : ""} ${item.id === "add" ? "nav-add" : ""}`}
-              onClick={() => { setShowSettings(false); setView(item.id); }}
+              onClick={() => { setShowSettings(false); setTopMenuOpen(false); setView(item.id); }}
               aria-label={item.label}
             >
               <Icon size={22} />

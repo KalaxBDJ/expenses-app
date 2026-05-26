@@ -60,6 +60,7 @@ button {
 }
 
 .topbar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -71,6 +72,30 @@ button {
   display: flex;
   align-items: end;
   gap: 10px;
+}
+
+.top-menu-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.16), rgba(34, 224, 196, 0.08));
+  color: var(--ink);
+  padding: 0 12px;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: 160ms ease;
+}
+
+.top-menu-button svg:last-child {
+  transition: transform 160ms ease;
+}
+
+.top-menu-button.is-open svg:last-child {
+  transform: rotate(180deg);
 }
 
 .settings-button {
@@ -228,6 +253,7 @@ input::placeholder {
 .primary-button:hover,
 .ghost-button:hover,
 .settings-button:hover,
+.top-menu-button:hover,
 .chip:hover,
 .nav-item:hover,
 .row-actions button:hover {
@@ -406,6 +432,27 @@ input::placeholder {
   align-items: center;
   padding: 12px 0;
   border-top: 1px solid var(--line);
+}
+
+.movement-row > div,
+.movement-item > div,
+.goal-mini > div {
+  min-width: 0;
+}
+
+.movement-row strong,
+.movement-row span,
+.movement-item strong,
+.movement-item span,
+.goal-mini strong,
+.goal-mini span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.movement-row b,
+.movement-item b {
+  white-space: nowrap;
 }
 
 .movement-row:first-of-type {
@@ -764,7 +811,7 @@ label span,
 
 @media (max-width: 680px) {
   .app-shell {
-    padding-inline: 12px;
+    padding: 14px 12px 96px;
   }
 
   .summary-grid {
@@ -773,6 +820,11 @@ label span,
 
   .hero-summary {
     display: grid;
+    padding: 18px;
+  }
+
+  .hero-summary strong {
+    font-size: clamp(2rem, 14vw, 3.25rem);
   }
 
   .form-grid,
@@ -781,24 +833,97 @@ label span,
   }
 
   .topbar {
-    align-items: start;
+    align-items: center;
+    gap: 10px;
   }
 
   .top-actions {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 15;
+    width: min(100%, 300px);
+    display: none;
+    grid-template-columns: 1fr auto;
     align-items: end;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+  }
+
+  .top-actions.is-open {
+    display: grid;
+  }
+
+  .top-menu-button {
+    display: inline-flex;
+  }
+
+  .topbar h1 {
+    font-size: 1.45rem;
   }
 
   .month-picker {
-    min-width: 124px;
+    min-width: 0;
   }
 
   .movement-item {
     grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 7px 8px;
   }
 
   .row-actions,
   .income-pill {
     grid-column: 2 / -1;
     justify-self: start;
+  }
+}
+
+@media (max-width: 460px) {
+  .panel,
+  .budget-card,
+  .goal-card,
+  .compact-form,
+  .entry-form {
+    padding: 14px;
+  }
+
+  .section-head {
+    align-items: start;
+  }
+
+  .movement-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .movement-row b {
+    justify-self: start;
+  }
+
+  .movement-item {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .movement-item b {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .movement-date {
+    width: 42px;
+  }
+
+  .bottom-nav {
+    gap: 2px;
+    padding-inline: 6px;
+  }
+
+  .nav-item {
+    font-size: 0.66rem;
   }
 }
