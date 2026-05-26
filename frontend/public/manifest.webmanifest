@@ -1,0 +1,17 @@
+{
+  "name": "Claridad Finanzas",
+  "short_name": "Claridad",
+  "description": "Resumen simple de gastos, ingresos, presupuestos y metas.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ee",
+  "theme_color": "#2f6f68",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
