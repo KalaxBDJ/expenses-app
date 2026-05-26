@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,6 +54,7 @@ from app.schemas import (
 
 
 app = FastAPI(title="Expense Tracker API")
+api_router = APIRouter(prefix="/api")
 security = HTTPBearer(auto_error=False)
 app.add_middleware(
     CORSMiddleware,
@@ -77,6 +78,11 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@api_router.get("/health")
+def api_health() -> dict:
+    return {"status": "ok"}
+
+
 def _require_user(credentials: HTTPAuthorizationCredentials | None) -> dict:
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -86,7 +92,7 @@ def _require_user(credentials: HTTPAuthorizationCredentials | None) -> dict:
     return user
 
 
-@app.post("/auth/register", response_model=AuthResponse)
+@api_router.post("/auth/register", response_model=AuthResponse)
 def register(user: UserCreate):
     try:
         created = create_user(user)
@@ -96,7 +102,7 @@ def register(user: UserCreate):
     return {"token": token, "user": created, "config": get_user_config(created["id"])}
 
 
-@app.post("/auth/login", response_model=AuthResponse)
+@api_router.post("/auth/login", response_model=AuthResponse)
 def login(credentials: UserLogin):
     session = authenticate_user(credentials)
     if not session:
@@ -104,34 +110,34 @@ def login(credentials: UserLogin):
     return session
 
 
-@app.get("/auth/me", response_model=AuthResponse)
+@api_router.get("/auth/me", response_model=AuthResponse)
 def me(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     user = _require_user(credentials)
     token = credentials.credentials if credentials else ""
     return {"token": token, "user": user, "config": get_user_config(user["id"])}
 
 
-@app.get("/users/{user_id}/config", response_model=UserConfigRecord)
+@api_router.get("/users/{user_id}/config", response_model=UserConfigRecord)
 def read_user_config(user_id: int):
     return get_user_config(user_id)
 
 
-@app.patch("/users/{user_id}/config", response_model=UserConfigRecord)
+@api_router.patch("/users/{user_id}/config", response_model=UserConfigRecord)
 def patch_user_config(user_id: int, config: UserConfigUpdate):
     return update_user_config(user_id, config)
 
 
-@app.get("/categories", response_model=list[CategoryRecord])
+@api_router.get("/categories", response_model=list[CategoryRecord])
 def get_categories():
     return list_categories()
 
 
-@app.post("/expenses", response_model=ExpenseRecord)
+@api_router.post("/expenses", response_model=ExpenseRecord)
 def create_manual_expense(expense: ExpenseCreate):
     return create_expense(expense, source="manual")
 
 
-@app.get("/expenses", response_model=list[ExpenseRecord])
+@api_router.get("/expenses", response_model=list[ExpenseRecord])
 def get_expenses(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
@@ -141,7 +147,7 @@ def get_expenses(
     return list_expenses(user_id=user_id, month=month, limit=limit, offset=offset)
 
 
-@app.patch("/expenses/{expense_id}", response_model=ExpenseRecord)
+@api_router.patch("/expenses/{expense_id}", response_model=ExpenseRecord)
 def patch_expense(expense_id: int, expense: ExpenseUpdate):
     updated = update_expense(expense_id, expense.model_dump(exclude_unset=True))
     if not updated:
@@ -149,7 +155,7 @@ def patch_expense(expense_id: int, expense: ExpenseUpdate):
     return updated
 
 
-@app.delete("/expenses/{expense_id}")
+@api_router.delete("/expenses/{expense_id}")
 def remove_expense(expense_id: int):
     deleted = delete_expense(expense_id)
     if not deleted:
@@ -157,7 +163,7 @@ def remove_expense(expense_id: int):
     return {"deleted": True}
 
 
-@app.get(
+@api_router.get(
     "/sms-expenses/create",
     response_model=ExpenseResponse,
     responses={400: {"model": ApiError}, 502: {"model": ApiError}},
@@ -181,12 +187,12 @@ async def create_sms_expense(text: str = Query(..., min_length=1)):
     return {"expense": expense, "db_record": db_record}
 
 
-@app.post("/incomes", response_model=IncomeRecord)
+@api_router.post("/incomes", response_model=IncomeRecord)
 def add_income(income: IncomeCreate):
     return create_income(income)
 
 
-@app.get("/incomes", response_model=list[IncomeRecord])
+@api_router.get("/incomes", response_model=list[IncomeRecord])
 def get_incomes(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
@@ -194,12 +200,12 @@ def get_incomes(
     return list_incomes(user_id=user_id, month=month)
 
 
-@app.post("/budgets", response_model=BudgetRecord)
+@api_router.post("/budgets", response_model=BudgetRecord)
 def save_budget(budget: BudgetCreate):
     return upsert_budget(budget)
 
 
-@app.get("/budgets", response_model=list[BudgetRecord])
+@api_router.get("/budgets", response_model=list[BudgetRecord])
 def get_budgets(
     user_id: int = Query(..., ge=1),
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
@@ -207,17 +213,17 @@ def get_budgets(
     return list_budgets(user_id=user_id, month=month)
 
 
-@app.post("/savings-goals", response_model=SavingsGoalRecord)
+@api_router.post("/savings-goals", response_model=SavingsGoalRecord)
 def add_savings_goal(goal: SavingsGoalCreate):
     return create_savings_goal(goal)
 
 
-@app.get("/savings-goals", response_model=list[SavingsGoalRecord])
+@api_router.get("/savings-goals", response_model=list[SavingsGoalRecord])
 def get_savings_goals(user_id: int = Query(..., ge=1)):
     return list_savings_goals(user_id=user_id)
 
 
-@app.post("/savings-goals/{goal_id}/contributions", response_model=SavingsGoalRecord)
+@api_router.post("/savings-goals/{goal_id}/contributions", response_model=SavingsGoalRecord)
 def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContribution):
     updated = add_savings_goal_contribution(goal_id, contribution.amount)
     if not updated:
@@ -225,10 +231,13 @@ def contribute_to_savings_goal(goal_id: int, contribution: SavingsGoalContributi
     return updated
 
 
-@app.get("/dashboard/monthly", response_model=DashboardSummary)
+@api_router.get("/dashboard/monthly", response_model=DashboardSummary)
 def monthly_dashboard(
     user_id: int = Query(..., ge=1),
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
 ):
     selected_month = month or date.today().strftime("%Y-%m")
     return get_dashboard_summary(user_id=user_id, month=selected_month)
+
+
+app.include_router(api_router)

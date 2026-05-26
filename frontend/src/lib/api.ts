@@ -1,14 +1,17 @@
 import type { AuthSession, Budget, Category, Currency, DashboardSummary, Expense, Income, SavingsGoal, UserConfig } from "../types";
 
 let authToken = "";
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+const legacyBackendUrl = import.meta.env.VITE_BACKEND_URL
+  ? `${String(import.meta.env.VITE_BACKEND_URL).replace(/\/$/, "")}/api`
+  : undefined;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? legacyBackendUrl ?? "/api").replace(/\/$/, "");
 
 export function setAuthToken(token: string) {
   authToken = token;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${BACKEND_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
